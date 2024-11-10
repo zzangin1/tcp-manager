@@ -12,8 +12,6 @@ namespace TcpManager
 	{
 		#region => Field
 
-		private static MsgQueueManager m_instance;
-
 		// 멀티 스레드 안전을 위해 ConcurrentQueue로 구현
 		public ConcurrentQueue<RecvMessage> RecvQueue;
 		public ConcurrentQueue<SendMessage> SendQueue;
@@ -27,20 +25,6 @@ namespace TcpManager
 		#endregion => Field
 
 		#region => Property
-
-		public static MsgQueueManager Instance
-		{
-			get
-			{
-				if (m_instance == null)
-				{
-					m_instance = new MsgQueueManager();
-				}
-
-				return m_instance;
-			}
-		}
-
 		#endregion => Property
 
 		#region => Constructor
@@ -134,10 +118,11 @@ namespace TcpManager
 					try
 					{
 						// Client에 응답 Command 전송 로직
+						TcpServerManager.Instance.SendToClient(sendMsg.Client, sendMsg.Cmd, sendMsg.ReturnValue);
 					}
 					catch
 					{
-						throw new Exception("");
+						throw new Exception("SendQueue : Send");
 					}
 				}
 				else
