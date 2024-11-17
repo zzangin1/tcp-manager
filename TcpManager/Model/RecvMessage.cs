@@ -17,10 +17,10 @@ namespace TcpManager.Model
 
 		#region => Constructor
 
-		public RecvMessage(string _cmd)
+		public RecvMessage(string cmd)
 		{
 			CmdID = Guid.NewGuid(); // Message 식별을 위해 고유 ID 부여
-			Cmd = _cmd;
+			Cmd = cmd;
 		}
 
 		#endregion => Constructor

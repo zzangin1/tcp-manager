@@ -22,20 +22,20 @@ namespace TcpManager.Model
 		/// <summary>
 		/// 단일 클라이언트일 때 Server에서 Client로 보내기 전 Queue 데이터
 		/// </summary>
-		public SendMessage(string _cmd, int _returnValue = 0)
+		public SendMessage(string cmd, int returnValue = InterfaceProtocol.RES_DEFAULT)
 		{
-			Cmd = _cmd;
-			ReturnValue = _returnValue;
+			Cmd = cmd;
+			ReturnValue = returnValue;
 		}
 
 		/// <summary>
 		/// 멀티 클라이언트일 때 Server에서 Client로 보내기 전 Queue 데이터
 		/// </summary>
-		public SendMessage(TcpClient _client, string _cmd, int _returnValue = 0)
+		public SendMessage(TcpClient client, string cmd, int returnValue = InterfaceProtocol.RES_DEFAULT)
 		{
-			Cmd = _cmd;
-			ReturnValue = _returnValue;
-			Client = _client;
+			Cmd = cmd;
+			ReturnValue = returnValue;
+			Client = client;
 		}
 
 		#endregion => Constructor
