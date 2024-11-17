@@ -2,6 +2,7 @@
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Sockets;
 using System.Text;
 using System.Threading.Tasks;
 using TcpManager.Model;
@@ -16,11 +17,19 @@ namespace TcpManager
 		public ConcurrentQueue<RecvMessage> RecvQueue;
 		public ConcurrentQueue<SendMessage> SendQueue;
 
-		Thread m_recvMsgThread;
-		Thread m_sendMsgThread;
+		Thread _recvMsgThread;
+		Thread _sendMsgThread;
 
-		private bool m_recvMsgThreadRunning = false;
-		private bool m_sendMsgThreadRunning = false;
+		private bool _recvMsgThreadRunning = false;
+		private bool _sendMsgThreadRunning = false;
+
+		private bool _isServer;
+
+		// Server To Client Delegate
+		public Action<TcpClient, string, int> SendToClient;
+
+		// Client To Server Delegate
+		public Action<string, int> SendToServer;
 
 		#endregion => Field
 
@@ -29,10 +38,15 @@ namespace TcpManager
 
 		#region => Constructor
 
-		public MsgQueueManager()
+		/// <summary>
+		/// _isServer = true => Server
+		/// _isServer = false => Client
+		/// </summary>
+		public MsgQueueManager(bool isServer)
 		{
 			RecvQueue = new ConcurrentQueue<RecvMessage>();
 			SendQueue = new ConcurrentQueue<SendMessage>();
+			_isServer = isServer;
 		}
 
 		#endregion => Constructor
@@ -44,15 +58,15 @@ namespace TcpManager
 		/// </summary>
 		public void StartMsgMonitoring()
 		{
-			m_recvMsgThreadRunning = true;
-			m_recvMsgThread = new Thread(RecvMsgMonitoring);
-			m_recvMsgThread.IsBackground = true;
-			m_recvMsgThread.Start();
+			_recvMsgThreadRunning = true;
+			_recvMsgThread = new Thread(RecvMsgMonitoring);
+			_recvMsgThread.IsBackground = true;
+			_recvMsgThread.Start();
 
-			m_sendMsgThreadRunning = true;
-			m_sendMsgThread = new Thread(SendMsgMonitoring);
-			m_sendMsgThread.IsBackground = true;
-			m_sendMsgThread.Start();
+			_sendMsgThreadRunning = true;
+			_sendMsgThread = new Thread(SendMsgMonitoring);
+			_sendMsgThread.IsBackground = true;
+			_sendMsgThread.Start();
 		}
 
 		/// <summary>
@@ -60,18 +74,18 @@ namespace TcpManager
 		/// </summary>
 		public void StopMsgMonitoringThread()
 		{
-			m_recvMsgThreadRunning = false;
+			_recvMsgThreadRunning = false;
 
-			if (m_recvMsgThread != null)
+			if (_recvMsgThread != null)
 			{
-				m_recvMsgThread = null;
+				_recvMsgThread = null;
 			}
 
-			m_sendMsgThreadRunning = false;
+			_sendMsgThreadRunning = false;
 
-			if (m_sendMsgThread != null)
+			if (_sendMsgThread != null)
 			{
-				m_sendMsgThread = null;
+				_sendMsgThread = null;
 			}
 		}
 
@@ -81,19 +95,28 @@ namespace TcpManager
 		/// </summary>
 		private void RecvMsgMonitoring()
 		{
-			while (m_recvMsgThreadRunning)
+			while (_recvMsgThreadRunning)
 			{
 				if (RecvQueue.Count > 0)
 				{
-					RecvQueue.TryDequeue(out RecvMessage _recvMsg);
+					RecvQueue.TryDequeue(out RecvMessage recvMsg);
 
 					try
 					{
-						// 클라이언트로 부터 받은 Command 수행 로직
+						// 클라이언트로 부터 받은 Reqest 처리 로직
+						if (_isServer)
+						{
+
+						}
+						// 서버로 부터 받은 Response 처리 로직
+						else
+						{
+
+						}
 					}
 					catch
 					{
-						throw new Exception("");
+						throw new Exception("RecvQueue : ");
 					}
 				}
 				else
@@ -109,7 +132,7 @@ namespace TcpManager
 		/// </summary>
 		private void SendMsgMonitoring()
 		{
-			while (m_sendMsgThreadRunning)
+			while (_sendMsgThreadRunning)
 			{
 				if (SendQueue.Count > 0)
 				{
@@ -117,8 +140,18 @@ namespace TcpManager
 
 					try
 					{
-						// Client에 응답 Command 전송 로직
-						TcpServerManager.Instance.SendToClient(sendMsg.Client, sendMsg.Cmd, sendMsg.ReturnValue);
+						// 응답 Command 전송 로직
+
+						// MsgQueue가 Server에서 사용될 때
+						if (_isServer)
+						{
+							SendToClient?.Invoke(sendMsg.Client, sendMsg.Cmd, sendMsg.ReturnValue);
+						}
+						// MsgQueue가 Client에서 사용될 때
+						else
+						{
+							SendToServer?.Invoke(sendMsg.Cmd, sendMsg.ReturnValue);
+						}
 					}
 					catch
 					{
