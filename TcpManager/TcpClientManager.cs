@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Net.Sockets;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
+using TcpManager.Model;
 
 namespace TcpManager
 {
@@ -12,12 +14,14 @@ namespace TcpManager
 	{
 		#region => Field
 
-		private TcpClient m_client;
-		private NetworkStream m_networkStream;
+		private TcpClient _client;
+		private NetworkStream _networkStream;
 
-		private Thread m_recvDataThread;
+		private Thread _recvDataThread;
 
-		private bool m_isClientConnected = false;
+		private bool _isClientConnected = false;
+
+		public MsgQueueManager MsgQueue;
 
 		#endregion => Field
 
@@ -28,7 +32,10 @@ namespace TcpManager
 
 		public TcpClientManager()
 		{
-			m_client = new TcpClient();
+			_client = new TcpClient();
+			MsgQueue = new MsgQueueManager(false);
+			MsgQueue.StartMsgMonitoring();
+			MsgQueue.SendToServer = SendToServer;
 		}
 
 		/// <summary>
@@ -46,17 +53,17 @@ namespace TcpManager
 		/// <summary>
 		/// 파라미터 정보를 사용해 서버에 연결
 		/// </summary>
-		public void Connect(string _ip, int _port)
+		public void Connect(string ip, int port)
 		{
 			try
 			{
-				m_client.Connect(_ip, _port);
-				m_networkStream = m_client.GetStream();
-				m_isClientConnected = true;
+				_client.Connect(ip, port);
+				_networkStream = _client.GetStream();
+				_isClientConnected = true;
 
-				m_recvDataThread = new Thread(RecvDataMonitoring);
-				m_recvDataThread.IsBackground = true;
-				m_recvDataThread.Start();
+				_recvDataThread = new Thread(RecvDataMonitoring);
+				_recvDataThread.IsBackground = true;
+				_recvDataThread.Start();
 			}
 			catch
 			{
@@ -71,16 +78,16 @@ namespace TcpManager
 		{
 			StopRecvDataMonitoring();
 
-			if (m_networkStream != null)
+			if (_networkStream != null)
 			{
-				m_networkStream.Close();
-				m_networkStream = null;
+				_networkStream.Close();
+				_networkStream = null;
 			}
 
-			if (m_client != null)
+			if (_client != null)
 			{
-				m_client.Close();
-				m_client = null;
+				_client.Close();
+				_client = null;
 			}
 		}
 
@@ -89,19 +96,19 @@ namespace TcpManager
 		/// </summary>
 		private void RecvDataMonitoring()
 		{
-			if (m_client == null)
+			if (_client == null)
 			{
 				return;
 			}
 
-			while (m_isClientConnected)
+			while (_isClientConnected)
 			{
-				if (m_networkStream.DataAvailable)
+				if (_networkStream.DataAvailable)
 				{
 					try
 					{
 						byte[] data = new byte[1024];
-						int dataSize = m_networkStream.Read(data, 0, data.Length);
+						int dataSize = _networkStream.Read(data, 0, data.Length);
 
 						if (dataSize > 0)
 						{
@@ -122,50 +129,71 @@ namespace TcpManager
 		/// </summary>
 		private void StopRecvDataMonitoring()
 		{
-			if (m_recvDataThread != null)
+			if (_recvDataThread != null)
 			{
-				m_isClientConnected = false;
+				_isClientConnected = false;
 
 				Stopwatch stopWatch = Stopwatch.StartNew();
 
-				while (m_recvDataThread.IsAlive && stopWatch.Elapsed.TotalSeconds <= 5)
+				while (_recvDataThread.IsAlive && stopWatch.Elapsed.TotalSeconds <= 5)
 				{
 					Thread.Sleep(100);
 				}
 
-				if (m_recvDataThread.IsAlive)
+				if (_recvDataThread.IsAlive)
 				{
 					throw new Exception("Client : RecvDataThread 종료 후 5초 경과하였으나 Thread가 살아있습니다.");
 				}
 			}
 
-			m_recvDataThread = null;
+			_recvDataThread = null;
 		}
 
 		/// <summary>
 		/// 서버로 부터 받은 데이터 처리
 		/// </summary>
-		private void ProcessRecvData(byte[] _data, int _dataSize)
+		private void ProcessRecvData(byte[] data, int dataSize)
 		{
-			string recvData = Encoding.UTF8.GetString(_data, 0, _dataSize);
+			string recvData = Encoding.UTF8.GetString(data, 0, dataSize);
 
 			// Recv Data 처리 로직 구현
+			RecvMessage recvMessage = new RecvMessage(recvData);
+			MsgQueue.RecvQueue.Enqueue(recvMessage);
+		}
+
+		public void SendToServer(string cmd, int returnValue = InterfaceProtocol.RES_DEFAULT)
+		{
+			StringBuilder sb = new StringBuilder();
+
+			sb.Append(InterfaceProtocol.REQ_FIRST_STRING);
+			sb.Append(cmd);
+
+			if (returnValue != InterfaceProtocol.RES_DEFAULT)
+			{
+				sb.Append(returnValue);
+			}
+
+			sb.Append(InterfaceProtocol.END_OF_MSG);
+
+			string message = sb.ToString();
+
+			SendData(message);
 		}
 
 		/// <summary>
 		/// 서버에 데이터 전송
 		/// </summary>
-		public void SendData(string _message)
+		public void SendData(string message)
 		{
-			if (m_isClientConnected == false)
+			if (_isClientConnected == false)
 			{
 				return;
 			}
 
 			try
 			{
-				byte[] data = Encoding.UTF8.GetBytes(_message);
-				m_networkStream.Write(data, 0, data.Length);
+				byte[] data = Encoding.UTF8.GetBytes(message);
+				_networkStream.Write(data, 0, data.Length);
 			}
 			catch
 			{
