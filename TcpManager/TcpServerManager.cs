@@ -14,17 +14,17 @@ namespace TcpManager
 	{
 		#region => Field
 
-		private static TcpServerManager m_instance;
-		private TcpListener m_server;
-		private List<TcpClient> m_clients;
+		private static TcpServerManager _instance;
+		private TcpListener _server;
+		private List<TcpClient> _clients;
 
-		MsgQueueManager m_msgQueueManager;
+		MsgQueueManager _msgQueueManager;
 
-		private Thread m_serverThread;
-		private List<Thread> m_recvDataThreads;
-		private Thread m_recvDataThread;
+		private Thread _serverThread;
+		private List<Thread> _recvDataThreads;
+		private Thread _recvDataThread;
 
-		private bool m_isServerRunning = false;
+		private bool _isServerRunning = false;
 
 		#endregion => Field
 
@@ -37,12 +37,12 @@ namespace TcpManager
 		{
 			get
 			{
-				if (m_instance == null)
+				if (_instance == null)
 				{
-					m_instance = new TcpServerManager();
+					_instance = new TcpServerManager();
 				}
 
-				return m_instance;
+				return _instance;
 			}
 		}
 
@@ -53,11 +53,12 @@ namespace TcpManager
 		public TcpServerManager()
 		{
 			// 9999번 포트로 대기
-			m_server = new TcpListener(IPAddress.Any, 9999);
-			m_msgQueueManager = new MsgQueueManager();
-			m_clients = new List<TcpClient>();
-			m_recvDataThreads = new List<Thread>();
-			m_msgQueueManager.StartMsgMonitoring();
+			_server = new TcpListener(IPAddress.Any, 9999);
+			_msgQueueManager = new MsgQueueManager(true);
+			_clients = new List<TcpClient>();
+			_recvDataThreads = new List<Thread>();
+			_msgQueueManager.StartMsgMonitoring();
+			_msgQueueManager.SendToClient = SendToClient;
 		}
 
 		/// <summary>
@@ -77,9 +78,9 @@ namespace TcpManager
 		/// </summary>
 		public void Start()
 		{
-			m_serverThread = new Thread(ServerMonitoring);
-			m_serverThread.IsBackground = true;
-			m_serverThread.Start();
+			_serverThread = new Thread(ServerMonitoring);
+			_serverThread.IsBackground = true;
+			_serverThread.Start();
 		}
 
 		/// <summary>
@@ -87,7 +88,7 @@ namespace TcpManager
 		/// </summary>
 		public void Stop()
 		{
-			m_msgQueueManager.StopMsgMonitoringThread();
+			_msgQueueManager.StopMsgMonitoringThread();
 			StopServerThread();
 			StopRecvDataThread();
 		}
@@ -97,27 +98,27 @@ namespace TcpManager
 		/// </summary>
 		private void ServerMonitoring()
 		{
-			m_server.Start();
-			m_isServerRunning = true;
+			_server.Start();
+			_isServerRunning = true;
 
-			while (m_isServerRunning)
+			while (_isServerRunning)
 			{
-				if (m_server.Pending())
+				if (_server.Pending())
 				{
-					TcpClient client = m_server.AcceptTcpClient();
+					TcpClient client = _server.AcceptTcpClient();
 
-					lock (m_clients)
+					lock (_clients)
 					{
-						m_clients.Add(client);
+						_clients.Add(client);
 					}
 
 					Thread recvThread = new Thread(() => RecvDataMonitoring(client));
 					recvThread.IsBackground = true;
 					recvThread.Start();
 
-					lock (m_recvDataThreads)
+					lock (_recvDataThreads)
 					{
-						m_recvDataThreads.Add(recvThread);
+						_recvDataThreads.Add(recvThread);
 					}
 				}
 				else
@@ -171,26 +172,26 @@ namespace TcpManager
 		/// </summary>
 		private void StopServerThread()
 		{
-			if (m_serverThread != null)
+			if (_serverThread != null)
 			{
-				m_isServerRunning = false;
+				_isServerRunning = false;
 
-				m_server.Stop();
+				_server.Stop();
 
 				Stopwatch stopwatch = Stopwatch.StartNew();
 
-				while (m_serverThread.IsAlive && stopwatch.Elapsed.TotalSeconds <= 5)
+				while (_serverThread.IsAlive && stopwatch.Elapsed.TotalSeconds <= 5)
 				{
 					Thread.Sleep(100);
 				}
 
-				if (m_serverThread.IsAlive)
+				if (_serverThread.IsAlive)
 				{
 					throw new Exception("Server : ServerThread 종료 후 5초 경과하였으나 Thread가 살아있습니다.");
 				}
 			}
 
-			m_serverThread = null;
+			_serverThread = null;
 		}
 
 		/// <summary>
@@ -198,7 +199,7 @@ namespace TcpManager
 		/// </summary>
 		private void StopRecvDataThread()
 		{
-			foreach (var client in m_clients)
+			foreach (var client in _clients)
 			{
 				if (client.Connected)
 				{
@@ -216,9 +217,9 @@ namespace TcpManager
 				}
 			}
 
-			lock (m_recvDataThread)
+			lock (_recvDataThread)
 			{
-				foreach (var recvThread in m_recvDataThreads)
+				foreach (var recvThread in _recvDataThreads)
 				{
 					if (recvThread.IsAlive)
 					{
@@ -236,38 +237,42 @@ namespace TcpManager
 					}
 				}
 
-				m_recvDataThreads.Clear();
+				_recvDataThreads.Clear();
 			}
 
-			m_clients.Clear();
+			_clients.Clear();
 		}
 
 		/// <summary>
 		/// 클라이언트로 부터 받은 데이터 처리
 		/// </summary>
-		private void ProcessRecvData(byte[] _data, int _dataSize, TcpClient _client)
+		private void ProcessRecvData(byte[] data, int dataSize, TcpClient client)
 		{
-			string recvData = Encoding.UTF8.GetString(_data, 0, _dataSize);
+			string recvData = Encoding.UTF8.GetString(data, 0, dataSize);
 
 			// Recv Data 처리 로직 구현
+			string processData = recvData.Substring(1, 5);
 
 			// Client에 응답 Data 전송
 			RecvMessage recvMessage = new RecvMessage(recvData);
-			SendMessage sendMessage = new SendMessage(_client, recvMessage.Cmd, 1);
-			m_msgQueueManager.RecvQueue.Enqueue(recvMessage);
-			m_msgQueueManager.SendQueue.Enqueue(sendMessage);
+			SendMessage sendMessage = new SendMessage(client, processData, InterfaceProtocol.RES_ACK);
+			_msgQueueManager.RecvQueue.Enqueue(recvMessage);
+			_msgQueueManager.SendQueue.Enqueue(sendMessage);
 		}
 
-		public void SendToClient(TcpClient _client, string _cmd, int _returnValue = 0)
+		public void SendToClient(TcpClient _client, string _cmd, int _returnValue = InterfaceProtocol.RES_DEFAULT)
 		{
 			StringBuilder sb = new StringBuilder();
 
+			sb.Append(InterfaceProtocol.RES_FIRST_STRING);
 			sb.Append(_cmd);
 
-			if (_returnValue != 0)
+			if (_returnValue != InterfaceProtocol.RES_DEFAULT)
 			{
 				sb.Append(_returnValue);
 			}
+
+			sb.Append(InterfaceProtocol.END_OF_MSG);
 
 			SendData(sb.ToString(), _client);
 		}
